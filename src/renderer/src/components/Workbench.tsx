@@ -167,7 +167,7 @@ export function Workbench({ onCloseProject }: { onCloseProject: () => void }): R
   const t = useT("workbench");
   const th = useT("highlights");
   const session = useSession();
-  const { file, transcript, auto, candidates, detecting, detectError, selected, focusedId, exporting } = session;
+  const { file, transcript, auto, candidates, detecting, detectError, selected, focusedId, exporting, stats } = session;
   const { config } = useLlmStore();
   const { prefs } = useRenderPrefs();
   const brandState = useBrandStore();
@@ -445,7 +445,7 @@ export function Workbench({ onCloseProject }: { onCloseProject: () => void }): R
                 </button>
               </div>
               {tab === "transcript" ? (
-                <TranscriptPanel transcript={transcript} onSeek={seek} onAudition={(startSec, endSec) => setTransportCommand((previous) => ({ id: (previous?.id ?? 0) + 1, action: "audition", startSec, endSec }))} />
+                <TranscriptPanel transcript={transcript} visualNotes={stats.vision?.notes} onSeek={seek} onAudition={(startSec, endSec) => setTransportCommand((previous) => ({ id: (previous?.id ?? 0) + 1, action: "audition", startSec, endSec }))} />
               ) : !llmReady ? (
                 // LLM 未配置:指路设置中心(配置本体已移到那里)
                 <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-line/70 p-6 text-center">

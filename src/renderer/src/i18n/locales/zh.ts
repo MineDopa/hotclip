@@ -161,6 +161,8 @@ export const zh = {
     searchNext: "下一个结果",
     searchResults: "逐句稿搜索结果",
     searchEmpty: "没有匹配的句子，请调整关键词或复核筛选。",
+    visualSearchLabel: "画面证据",
+    visualSearchCount: "{n} 条画面命中",
     alignToggle: "校准时间",
     alignEngine: "模型",
     alignLanguage: "语言",

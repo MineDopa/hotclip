@@ -212,6 +212,8 @@ export interface VisionStats {
   fullScan?: boolean;
   /** 全场扫描带出画面描述的时刻数(画面时刻线进了选段证据)。 */
   notedMoments?: number;
+  /** Bounded full-scan notes retained for timestamped evidence search. */
+  notes?: Array<{ t: number; energy: number; note: string; visibleText?: string[] }>;
   /** 候选段画面复核:复核条数(v0.12;未跑复核缺省)。 */
   candidatesReviewed?: number;
   /** 候选段画面复核:被加分/降分的条数。 */

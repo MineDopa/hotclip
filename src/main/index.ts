@@ -855,7 +855,12 @@ ipcMain.handle(
             ...(visionOutcome && visionOutcome.visualNotes.length > 0 ? { visualNotes: visionOutcome.visualNotes } : {}),
             ...(emotionOutcome ? { emotionPeaks: emotionOutcome.emotionPeaks } : {}),
           };
-          visionStats = visionOutcome?.stats;
+          visionStats = visionOutcome
+            ? {
+                ...visionOutcome.stats,
+                ...(visionOutcome.visualNotes.length > 0 ? { notes: visionOutcome.visualNotes } : {}),
+              }
+            : undefined;
           emotionStats = emotionOutcome?.stats;
         }
       }

@@ -663,7 +663,17 @@ const browserMock: HotClipApi = {
     // 开了视觉信号就演示一份抽帧统计;开了全场扫描给扫描档的量级
     const visionStats = vision
       ? scan
-        ? { framesTotal: 240, framesScored: 233, peakCount: 9, fullScan: true, notedMoments: 14 }
+        ? {
+            framesTotal: 240,
+            framesScored: 233,
+            peakCount: 9,
+            fullScan: true,
+            notedMoments: 14,
+            notes: [
+              { t: 48, energy: 8, note: "纸巾吸水实验特写", visibleText: ["三层加厚", "¥2.9"] },
+              { t: 126, energy: 7, note: "价格对比画面", visibleText: ["十几块 vs 两块多"] },
+            ],
+          }
         : { framesTotal: 20, framesScored: 18, peakCount: 3 }
       : undefined;
     // 表情峰值信号零配置自动跑,浏览器预览恒给演示统计

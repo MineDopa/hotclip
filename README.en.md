@@ -24,7 +24,7 @@
 
 </div>
 
-Local transcription now checkpoints completed windows and resumes after interruption. Transcript editing adds cross-sentence search, virtualized long lists, and timing calibration with listen/apply/undo. Exports improve language-aware caption readability. See the [speech and long-transcript guide](docs/local-speech.md) for optional local Qwen3-ASR setup and reproducible model evaluation.
+Local transcription now checkpoints completed windows and resumes after interruption. Transcript editing adds cross-sentence search, virtualized long lists, and timing calibration with listen/apply/undo. After a full visual scan, the same search also finds confirmed scene descriptions and on-screen text, with one-click seeking to each timestamp. Exports improve language-aware caption readability. See the [speech and long-transcript guide](docs/local-speech.md) for optional local Qwen3-ASR setup and reproducible model evaluation.
 
 ## Export progress and cancellation
 

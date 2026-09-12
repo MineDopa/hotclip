@@ -15,6 +15,7 @@
 ## Key facts
 
 - v0.28 transcript workflow: import original-language UTF-8 SRT/WebVTT without ASR; preserve cue bounds and mark within-cue timing estimated. Unicode-aware cross-sentence search, virtualized long transcripts and selective alignment preview/listen/apply/undo.
+- Evidence search: after an opt-in full visual scan, transcript search also matches confirmed scene descriptions and on-screen text, and each result seeks the source timeline without adding a model or network call.
 - Local ASR recovery: completed 28-second windows checkpoint atomically; bounded PCM reads, desktop stop/resume and explicit restart. Optional loopback-only Qwen3-ASR 0.6B/1.7B service with optional ForcedAligner, CLI/MCP parity and reproducible local evaluation. 0.6B CPU smoke tested; 1.7B and GPU performance not established.
 - Export reliability: cancellation from preparation onward, exclusive desktop task ownership, separate stage feedback and safe replacement after successful cut/jump/audiogram/concat/overlay encoding. Previously completed clips remain; not a whole-batch rollback. SRT-only export works without burning captions.
 

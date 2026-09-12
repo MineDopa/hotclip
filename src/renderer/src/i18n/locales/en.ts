@@ -159,6 +159,8 @@ export const en = {
     searchNext: "Next match",
     searchResults: "Transcript search results",
     searchEmpty: "No matching sentences. Adjust the search or timing review filter.",
+    visualSearchLabel: "Visual evidence",
+    visualSearchCount: "{n} visual matches",
     alignToggle: "Align timing",
     alignEngine: "Model",
     alignLanguage: "Language",
