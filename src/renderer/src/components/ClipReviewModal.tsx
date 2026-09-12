@@ -273,6 +273,12 @@ export function ClipReviewModal({
     (at: number): void => {
       const v = videoRef.current;
       if (!v) return;
+      // Windows 上自定义协议偶发首个 Range 请求失败时，保留 video 元素并允许再次加载。
+      // 之前失败状态会卸载 video，按钮也随之置灰，用户只能关闭审阅台重开。
+      if (videoFailed) {
+        setVideoFailed(false);
+        v.load();
+      }
       v.currentTime = at;
       setPlayheadSec(at);
       void v
@@ -285,7 +291,7 @@ export function ClipReviewModal({
           /* 播放被浏览器拒绝(极少)——按钮再点一次即可 */
         });
     },
-    [stopLoop, tick]
+    [stopLoop, tick, videoFailed]
   );
 
   const seekTo = useCallback((at: number): void => {
@@ -399,12 +405,12 @@ export function ClipReviewModal({
 
         {/* 视频预览(相对定位承载安全区遮罩) */}
         <div ref={videoBoxRef} className="relative mt-4 overflow-hidden rounded-xl bg-black/60">
-          {showVideo ? (
+          {src !== "" && (
             <video
               ref={videoRef}
               src={src}
               playsInline
-              className="mx-auto max-h-[36vh] w-full object-contain"
+              className={`mx-auto max-h-[36vh] w-full object-contain ${videoFailed ? "hidden" : ""}`}
               onLoadedMetadata={(e) => {
                 const v = e.currentTarget;
                 if (v.videoWidth > 0 && v.videoHeight > 0) setVideoAr(v.videoWidth / v.videoHeight);
@@ -415,9 +421,15 @@ export function ClipReviewModal({
                 setPlaying(false);
                 stopLoop();
               }}
-              onError={() => setVideoFailed(true)}
+              onCanPlay={() => setVideoFailed(false)}
+              onError={() => {
+                setPlaying(false);
+                stopLoop();
+                setVideoFailed(true);
+              }}
             />
-          ) : (
+          )}
+          {!showVideo && (
             <div className="flex flex-col items-center gap-2 px-6 py-10 text-center">
               <LuFilm className="h-6 w-6 text-mut" />
               <p className="max-w-md text-[12.5px] leading-relaxed text-mut">
@@ -452,7 +464,7 @@ export function ClipReviewModal({
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <button
             type="button"
-            disabled={!showVideo}
+            disabled={src === ""}
             onClick={() => (playing ? videoRef.current?.pause() : playFrom(stitched ? pieces[0].startSec : startSec))}
             className="btn-flame inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-[12.5px] font-bold text-white disabled:opacity-40"
           >
@@ -461,7 +473,7 @@ export function ClipReviewModal({
           </button>
           <button
             type="button"
-            disabled={!showVideo}
+            disabled={src === ""}
             title={t("reviewPlayEndHint")}
             onClick={() => {
               const last = stitched ? pieces[pieces.length - 1] : { startSec, endSec };
@@ -521,7 +533,7 @@ export function ClipReviewModal({
                   )}
                   <button
                     type="button"
-                    disabled={!showVideo}
+                    disabled={src === ""}
                     onClick={() => playFrom(p.startSec)}
                     className="flex w-full items-center gap-2 rounded-lg bg-panel-2 px-2.5 py-1.5 text-left transition-colors hover:bg-panel disabled:opacity-50"
                   >

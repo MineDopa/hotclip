@@ -8,7 +8,7 @@ import { LuPalette, LuX, LuPlus, LuTrash2, LuImage, LuCheck } from "react-icons/
 import { useT } from "../i18n/store";
 import { getApi } from "../api/provider";
 import { useBrandStore, activeBrandStyle, SWATCHES } from "../stores/brand-store";
-import type { BrandStyle, BrandWatermark } from "../../../shared/api-types";
+import { FONT_SCALE_CHOICES, type BrandStyle, type BrandWatermark } from "../../../shared/api-types";
 import { ModalShell } from "./ui";
 
 /** 迷你预览里字幕基线位置(与管线三档 marginV 倍率一致换算)。 */
@@ -148,9 +148,9 @@ export function BrandStyleModal({ onClose }: { onClose: () => void }): React.JSX
               <div className="mt-2 flex gap-2">
                 {(
                   [
-                    ["sizeSmall", 0.85],
-                    ["sizeStandard", 1],
-                    ["sizeLarge", 1.18],
+                    ["sizeSmall", FONT_SCALE_CHOICES.small],
+                    ["sizeStandard", FONT_SCALE_CHOICES.standard],
+                    ["sizeLarge", FONT_SCALE_CHOICES.large],
                   ] as const
                 ).map(([key, v]) => (
                   <button

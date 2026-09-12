@@ -3,7 +3,7 @@
  * 用户,只看到 fetch failed 是不知道下一步的——本地/云端要给不同的指引。
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { chatComplete, MAX_TOKENS, RETRY_MAX_TOKENS } from "../highlight/detect";
+import { chatComplete, MAX_TOKENS, RETRY_MAX_TOKENS, thinkingParams } from "../highlight/detect";
 
 const OLLAMA = { baseUrl: "http://localhost:11434/v1", apiKey: "", model: "qwen3:8b" };
 const CLOUD = { baseUrl: "https://api.atlascloud.ai/v1", apiKey: "sk-x", model: "qwen/qwen3.5-flash" };
@@ -45,6 +45,45 @@ function chatResponse(message: Record<string, unknown>, finishReason = "stop"): 
 }
 
 describe("chatComplete 空响应处理(issue #8)", () => {
+  it("Qwen3 混合思考模型首请求关闭 thinking,避免正文预算被吃光", async () => {
+    const fetchMock = vi.fn(async () => chatResponse({ content: '{"clips":[]}' }));
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(chatComplete({ ...CLOUD, model: "qwen3.5-flash" }, "s", "u")).resolves.toBe('{"clips":[]}');
+    const body = JSON.parse(((fetchMock.mock.calls[0] as unknown) as [string, { body: string }])[1].body) as Record<string, unknown>;
+    expect(body.enable_thinking).toBe(false);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("严格网关不认识 enable_thinking 时回退为标准请求", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response("unsupported parameter: enable_thinking", { status: 400 }))
+      .mockResolvedValueOnce(chatResponse({ content: '{"clips":[]}' }));
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(chatComplete({ ...CLOUD, model: "qwen3.5-flash" }, "s", "u")).resolves.toBe('{"clips":[]}');
+    const firstBody = JSON.parse(((fetchMock.mock.calls[0] as unknown) as [string, { body: string }])[1].body) as Record<string, unknown>;
+    const secondBody = JSON.parse(((fetchMock.mock.calls[1] as unknown) as [string, { body: string }])[1].body) as Record<string, unknown>;
+    expect(firstBody.enable_thinking).toBe(false);
+    expect(secondBody.enable_thinking).toBeUndefined();
+  });
+
+  it("兼容 OpenAI 多模态 content 数组和旧式 choices.text", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(chatResponse({ content: [{ type: "text", text: "{" }, { type: "text", text: '"clips":[]}' }] }));
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(chatComplete(CLOUD, "s", "u")).resolves.toBe('{"clips":[]}');
+
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ choices: [{ text: "legacy" }] }), { status: 200 })));
+    await expect(chatComplete(CLOUD, "s", "u")).resolves.toBe("legacy");
+  });
+
+  it("只给 Qwen/QwQ 注入关闭 thinking 参数", () => {
+    expect(thinkingParams("qwen3.5-flash")).toEqual({ enable_thinking: false });
+    expect(thinkingParams("Qwen/QwQ-32B")).toEqual({ enable_thinking: false });
+    expect(thinkingParams("deepseek-v4-flash")).toEqual({});
+  });
+
   it("思考模型烧完预算(finish=length) → 换大预算重试并成功", async () => {
     const fetchMock = vi
       .fn()

@@ -6,6 +6,7 @@ import {
   applyBrandToLayout,
   sanitizeBrand,
   isValidHex,
+  FONT_SCALE_CHOICES,
 } from "../brand";
 import { VERTICAL_LAYOUT, buildCaptionAss, keywordText } from "../subtitle";
 import { buildOverlayPayload } from "../caption-overlay/payload";
@@ -46,6 +47,12 @@ describe("applyBrandToLayout", () => {
     const l = applyBrandToLayout(VERTICAL_LAYOUT, { fontScale: 1.18 });
     expect(l.fontSize).toBe(Math.round(78 * 1.18));
     expect(l.maxLineUnits).toBe(Math.round(22 / 1.18));
+  });
+
+  it("小字号档位明显缩小动态字幕", () => {
+    const l = applyBrandToLayout(VERTICAL_LAYOUT, { fontScale: FONT_SCALE_CHOICES.small });
+    expect(l.fontSize).toBe(Math.round(VERTICAL_LAYOUT.fontSize * 0.68));
+    expect(l.fontSize).toBeLessThan(VERTICAL_LAYOUT.fontSize * 0.7);
   });
 
   it("位置三档只动 marginV", () => {

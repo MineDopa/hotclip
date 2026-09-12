@@ -54,6 +54,19 @@ export function extraParams(baseUrl: string): Record<string, unknown> {
   return /pollinations\.ai/i.test(baseUrl) ? { reasoning_effort: "low" } : {};
 }
 
+/**
+ * Hybrid Qwen models default to thinking on several OpenAI-compatible hosts.
+ * Highlight detection needs a short structured answer; spending the whole
+ * completion budget on hidden reasoning produces an empty `content` field.
+ * Keep this scoped to model ids that document the switch so ordinary OpenAI
+ * compatible providers are not sent an unsupported parameter.
+ */
+export function thinkingParams(model: string): Record<string, unknown> {
+  return /(?:^|[/:-])qwen3(?:[.:-]|$)|(?:^|[/:-])qwq(?:[.:-]|$)/i.test(model)
+    ? { enable_thinking: false }
+    : {};
+}
+
 /** 本地端点(Ollama 等):不需要 API Key,但需要服务真的在本机跑着。 */
 function isLocalEndpoint(baseUrl: string): boolean {
   return /localhost|127\.0\.0\.1/.test(baseUrl);
@@ -78,7 +91,8 @@ async function chatAttempt(
   system: string,
   user: string,
   signal: AbortSignal | undefined,
-  maxTokens: number
+  maxTokens: number,
+  includeThinkingParam = true
 ): Promise<ChatAttempt> {
   const url = `${llm.baseUrl.replace(/\/+$/, "")}/chat/completions`;
   let res: Response;
@@ -98,6 +112,7 @@ async function chatAttempt(
         temperature: 0.6,
         max_tokens: maxTokens,
         ...extraParams(llm.baseUrl),
+        ...(includeThinkingParam ? thinkingParams(llm.model) : {}),
       }),
       signal,
     });
@@ -122,7 +137,12 @@ async function chatAttempt(
   let data: {
     choices?: Array<{
       finish_reason?: string;
-      message?: { content?: string; reasoning_content?: string; reasoning?: string };
+      text?: string;
+      message?: {
+        content?: string | Array<{ type?: string; text?: unknown }>;
+        reasoning_content?: string;
+        reasoning?: string;
+      };
     }>;
   };
   try {
@@ -132,8 +152,17 @@ async function chatAttempt(
   }
   const choice = data.choices?.[0];
   const msg = choice?.message;
+  const content = Array.isArray(msg?.content)
+    ? msg.content
+        .map((part) => (typeof part?.text === "string" ? part.text : ""))
+        .join("")
+    : typeof msg?.content === "string"
+      ? msg.content
+      : typeof choice?.text === "string"
+        ? choice.text
+        : "";
   return {
-    content: typeof msg?.content === "string" ? msg.content : "",
+    content,
     reasoning:
       (typeof msg?.reasoning_content === "string" && msg.reasoning_content) ||
       (typeof msg?.reasoning === "string" && msg.reasoning) ||
@@ -154,14 +183,25 @@ async function chatAttempt(
  *    每条都告诉用户下一步换什么。
  */
 export async function chatComplete(llm: LlmConfig, system: string, user: string, signal?: AbortSignal): Promise<string> {
-  const first = await chatAttempt(llm, system, user, signal, MAX_TOKENS);
+  let includeThinkingParam = Object.keys(thinkingParams(llm.model)).length > 0;
+  let first: ChatAttempt;
+  try {
+    first = await chatAttempt(llm, system, user, signal, MAX_TOKENS, includeThinkingParam);
+  } catch (e) {
+    // A strict OpenAI-compatible gateway may reject the provider-specific
+    // switch. Retry once without it; ordinary HTTP/auth failures still throw.
+    const message = e instanceof Error ? e.message : String(e);
+    if (!includeThinkingParam || !/HTTP 400/i.test(message) || !/thinking|unknown parameter|unsupported/i.test(message)) throw e;
+    includeThinkingParam = false;
+    first = await chatAttempt(llm, system, user, signal, MAX_TOKENS, false);
+  }
   if (first.content) return first.content;
   if (first.reasoning && first.finishReason !== "length") return first.reasoning;
   // 大预算重试自身的报错(比如超过模型输出上限的 400)不覆盖「空响应」这个
   // 更准的诊断;用户主动取消照常中断
   let retry: ChatAttempt | null = null;
   try {
-    retry = await chatAttempt(llm, system, user, signal, RETRY_MAX_TOKENS);
+    retry = await chatAttempt(llm, system, user, signal, RETRY_MAX_TOKENS, includeThinkingParam);
   } catch (e) {
     if (signal?.aborted) throw e;
   }

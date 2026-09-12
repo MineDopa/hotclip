@@ -455,13 +455,16 @@ export interface BrandWatermark {
 export interface BrandStyle {
   /** 主高亮色 "#RRGGBB":卡拉OK点亮/关键词强调/开场钩子/气泡渐变同源。 */
   highlightColor?: string;
-  /** 字号缩放(三档 0.85/1/1.18,自由数值也接受)。 */
+  /** 字号缩放(三档 0.68/1/1.18,自由数值也接受)。 */
   fontScale?: number;
   /** 字幕高低位置(安全区内三档)。 */
   captionPosition?: "low" | "standard" | "high";
   /** logo 水印;不设则不烧。 */
   watermark?: BrandWatermark;
 }
+
+/** 品牌字幕字号三档;渲染层和导出管线共用,避免 Windows 安装版出现档位漂移。 */
+export const FONT_SCALE_CHOICES = { small: 0.68, standard: 1, large: 1.18 } as const;
 
 /**
  * 导出画质档 → x264 CRF。数值越小越清晰、文件越大;

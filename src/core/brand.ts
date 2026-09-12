@@ -3,13 +3,12 @@
  * 参数消毒。UI 配一次,每条切片的 ASS 字幕/气泡字幕/水印全部复用。
  */
 import type { AssLayout } from "./subtitle";
-import type { BrandStyle } from "../shared/api-types";
+import { FONT_SCALE_CHOICES, type BrandStyle } from "../shared/api-types";
 
 /** 默认高亮色:火焰橙(与既有硬编码一致,未配置时输出不变)。 */
 export const DEFAULT_HIGHLIGHT_HEX = "#FF6E0D";
 
-/** 字号三档(UI 与管线共用;自由数值也接受,消毒时钳制)。 */
-export const FONT_SCALE_CHOICES = { small: 0.85, standard: 1, large: 1.18 } as const;
+export { FONT_SCALE_CHOICES } from "../shared/api-types";
 
 /** 字幕位置三档 → 基准 marginV 的倍率(竖屏 560→420/560/700,横屏同比)。 */
 const POSITION_FACTOR = { low: 0.75, standard: 1, high: 1.25 } as const;
