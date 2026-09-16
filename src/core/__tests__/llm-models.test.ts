@@ -1,5 +1,34 @@
-import { describe, it, expect } from "vitest";
-import { parseModelIds, MODEL_LIST_MAX } from "../llm-models";
+import { afterEach, describe, it, expect, vi } from "vitest";
+import { listModels, parseModelIds, MODEL_LIST_MAX, MODEL_LIST_TIMEOUT_MS } from "../llm-models";
+
+afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
+
+describe("listModels 请求边界", () => {
+  it("正文挂起在 12 秒内结束并允许手填", async () => {
+    vi.useFakeTimers();
+    const cancel = vi.fn();
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(new ReadableStream({ cancel }))));
+    const pending = listModels("http://[::1]:11434/v1", "");
+    await vi.advanceTimersByTimeAsync(MODEL_LIST_TIMEOUT_MS);
+    expect(await pending).toEqual({ ids: [], error: expect.stringContaining("超时") });
+    expect(cancel).toHaveBeenCalledTimes(1);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("接口错误隐藏密钥且不自动重发模型列表请求", async () => {
+    const fetchMock = vi.fn(async () => new Response('{"error":{"message":"busy for sk-private"}}', { status: 503 }));
+    vi.stubGlobal("fetch", fetchMock);
+    expect(await listModels("https://example.com/v1", "sk-private")).toEqual({ ids: [], error: "HTTP 503: busy for [redacted]" });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("响应头声明过大的模型列表时关闭流并允许手填", async () => {
+    const cancel = vi.fn();
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(new ReadableStream({ cancel }), { headers: { "content-length": "9000000" } })));
+    expect(await listModels("http://127.0.0.1:11434/v1", "")).toEqual({ ids: [], error: expect.stringContaining("响应过大") });
+    expect(cancel).toHaveBeenCalledTimes(1);
+  });
+});
 
 describe("parseModelIds", () => {
   it("认 OpenAI 标准形状 {data:[{id}]}", () => {

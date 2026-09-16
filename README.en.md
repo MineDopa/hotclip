@@ -26,6 +26,8 @@
 
 Local transcription now checkpoints completed windows and resumes after interruption. Transcript editing adds cross-sentence search, virtualized long lists, and timing calibration with listen/apply/undo. After a full visual scan, the same search also finds confirmed scene descriptions and on-screen text, with one-click seeking to each timestamp. Exports improve language-aware caption readability. See the [speech and long-transcript guide](docs/local-speech.md) for optional local Qwen3-ASR setup and reproducible model evaluation.
 
+**Search to clip**: browse speech and visual matches in time order, filter by source, seek matched words, play context, then review preselected full sentences in the picker. Estimated timing stays labeled; long transcript picking is virtualized, and added candidates support undo/redo.
+
 ## Export progress and cancellation
 
 Exports identify preparation, translation, publish copy, variants, encoding and finalization. Cancel during preparation, wait for cleanup, then retry without losing the candidate selection. A second desktop export cannot replace an active job. Progress stays below 100% until delivery completes. SRT-only export retains word timings even when burned captions are off.
@@ -159,7 +161,8 @@ The LLM only picks *which part* and must quote the transcript; timestamps come f
 - **Reference-clip driven detection**: hand in a viral clip to model after — its pacing is measured locally and steers selection (CLI `--reference`)
 - **Review feedback loop**: kept/rejected candidates land in a local preference file steering the next run — it learns your taste, and the data never leaves your machine
 - **Real-performance feedback loop**: import platform-exported CSV/JSON metrics with `pnpm cli feedback`; HotClip locally learns the topic, hook, and duration patterns behind high/low performers. Desktop, CLI, MCP, and watch-folder detection all use the audience evidence without copying old titles or uploading account data
-- **On-device two-stage funnel**: a small local model shortlists first, the cloud model reads only the shortlist — an order of magnitude less LLM spend on long videos, zero accuracy loss
+- **On-device two-stage funnel**: a small local model shortlists first, then the cloud model reads the shortlist. Long transcripts use at most two concurrent screening requests; failed or unprocessed chunks remain intact when the screening deadline is reached
+- **Bounded model requests**: text analysis, visual review and model-list loading stop waiting when their deadlines expire. Text and vision calls retry a transient rate limit or busy response at most once, cancellation interrupts the wait, and error messages redact echoed API keys
 - **Shot-snapped cut points**: TransNetV2 (31MB ONNX, local) finds real shot changes; boundaries snap with a word-boundary guard that never clips speech
 - **Product mode (live-selling)**: type product words and selection follows conversion logic (demos > pitches > price mechanics); stalling-for-engagement segments excluded
 - **Clip length presets**: short 10-30s / standard 8-40s / long 40-90s — the target length is a hard constraint in the selection prompt
@@ -308,6 +311,8 @@ One-click hands-off mode + 24/7 watch folder + headless CLI + local MCP server �
 </details>
 
 ## What's new
+
+**[v0.29.0](https://github.com/xixihhhh/hotclip/releases/tag/v0.29.0)** (2026-09-16): unified speech/visual search, word seeking, context playback and preselected clips; a virtualized long-transcript picker, bounded model requests with cancellable transient recovery, and limited local screening concurrency with failed-chunk retention. [Release notes](docs/releases/v0.29.0.md).
 
 **[v0.28.1](https://github.com/xixihhhh/hotclip/releases/tag/v0.28.1)** (2026-09-12): fixes empty responses from Qwen3/QwQ hybrid-thinking models, lowers the Small dynamic-caption size to 0.68, and lets Windows review playback retry after a media-load failure. [Release notes](docs/releases/v0.28.1.md).
 

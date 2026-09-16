@@ -26,6 +26,8 @@ import { detectClipCommands } from "./commands";
 import { applyRuleGate, type GateTier } from "./gate";
 import { utilityDensity, utilityBoost, UTILITY_SAVE_WORTHY } from "../../shared/utility-density";
 import { clipDurationSec, MAX_PIECES, type ClipPiece } from "../../shared/pieces";
+import { isLocalBaseUrl } from "../../shared/llm-preflight";
+import { LLM_LOCAL_TIMEOUT_MS, LLM_REMOTE_TIMEOUT_MS, LlmTransportError, llmRequestBudget, modelErrorDetail, requestLlmText, retryAfterMs, type LlmRequestBudget } from "../llm-transport";
 import { genrePreset, normalizeGenreId, type EvidenceClass } from "../genre";
 import {
   fuseMoments,
@@ -67,11 +69,6 @@ export function thinkingParams(model: string): Record<string, unknown> {
     : {};
 }
 
-/** 本地端点(Ollama 等):不需要 API Key,但需要服务真的在本机跑着。 */
-function isLocalEndpoint(baseUrl: string): boolean {
-  return /localhost|127\.0\.0\.1/.test(baseUrl);
-}
-
 /** 单次调用的输出预算。注意:思考型模型的推理 token 也计入这份预算。 */
 export const MAX_TOKENS = 4000;
 /** 空正文重试的放大预算:思考型模型把常规预算全烧在推理上时,给足空间再试一次。 */
@@ -92,12 +89,13 @@ async function chatAttempt(
   user: string,
   signal: AbortSignal | undefined,
   maxTokens: number,
+  budget: LlmRequestBudget,
   includeThinkingParam = true
 ): Promise<ChatAttempt> {
   const url = `${llm.baseUrl.replace(/\/+$/, "")}/chat/completions`;
-  let res: Response;
+  let res: Awaited<ReturnType<typeof requestLlmText>>;
   try {
-    res = await fetch(url, {
+    res = await requestLlmText(url, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -114,25 +112,29 @@ async function chatAttempt(
         ...extraParams(llm.baseUrl),
         ...(includeThinkingParam ? thinkingParams(llm.model) : {}),
       }),
-      signal,
-    });
+    }, { signal, budget });
   } catch (e) {
     signal?.throwIfAborted();
-    const msg = e instanceof Error ? e.message : String(e);
+    if (e instanceof LlmTransportError) throw e;
     // 连不上最常见的场景是「选了本地 Ollama 但没装/没启动」(issue #6)——
     // 报错必须告诉用户下一步做什么,一句 fetch failed 只会把人留在原地
-    const hint = isLocalEndpoint(llm.baseUrl)
+    const hint = isLocalBaseUrl(llm.baseUrl)
       ? "本机 LLM 服务没有响应:若用 Ollama,请先到 ollama.com 安装并启动,再运行 ollama pull 拉取模型;或点「连接 AI 模型」换云端供应商,填 API Key 即用。/ Local LLM not responding: install & start Ollama (ollama.com) and pull the model, or switch to a cloud provider with an API key."
       : "请检查网络连接,并确认 Base URL 填写正确。/ Check your network and verify the Base URL.";
-    throw new Error(`无法连接 LLM 服务 / cannot reach LLM endpoint (${llm.baseUrl}): ${msg}\n${hint}`);
+    throw new Error(`无法连接 LLM 服务 / cannot reach LLM endpoint\n${hint}`);
   }
-  const text = await res.text();
+  const text = res.text;
   if (!res.ok) {
     // Ollama 在跑但模型没拉:404 补一句拉取命令,免得用户以为软件坏了
-    const hint = isLocalEndpoint(llm.baseUrl) && res.status === 404
+    const retryWait = retryAfterMs(res.headers.get("retry-after"));
+    const hint = isLocalBaseUrl(llm.baseUrl) && res.status === 404
       ? `\n本机可能还没拉取这个模型:先运行 ollama pull ${llm.model} / model likely not pulled yet: run ollama pull ${llm.model}`
-      : "";
-    throw new Error(`LLM 请求失败 / LLM request failed (HTTP ${res.status}): ${text.slice(0, 300)}${hint}`);
+      : res.status === 429 || res.status === 503
+        ? retryWait !== null && retryWait > 0
+          ? `\n服务商建议等待 ${Math.ceil(retryWait / 1000)} 秒后重试。/ Retry after ${Math.ceil(retryWait / 1000)} seconds.`
+          : "\n服务暂时不可用或额度受限，请稍后重试并检查服务状态与额度。/ Check service availability and quota, then retry later."
+        : "";
+    throw new Error(`LLM 请求失败 / LLM request failed (HTTP ${res.status}): ${modelErrorDetail(text, llm.apiKey)}${hint}`);
   }
   let data: {
     choices?: Array<{
@@ -148,9 +150,9 @@ async function chatAttempt(
   try {
     data = JSON.parse(text);
   } catch {
-    throw new Error(`LLM 返回非 JSON 响应 / non-JSON response: ${text.slice(0, 200)}`);
+    throw new Error("LLM 返回非 JSON 响应，请检查 Base URL。/ Non-JSON response; check the Base URL.");
   }
-  const choice = data.choices?.[0];
+  const choice = data?.choices?.[0];
   const msg = choice?.message;
   const content = Array.isArray(msg?.content)
     ? msg.content
@@ -162,11 +164,11 @@ async function chatAttempt(
         ? choice.text
         : "";
   return {
-    content,
-    reasoning:
+    content: content.trim(),
+    reasoning: (
       (typeof msg?.reasoning_content === "string" && msg.reasoning_content) ||
       (typeof msg?.reasoning === "string" && msg.reasoning) ||
-      "",
+      "").trim(),
     finishReason: String(choice?.finish_reason ?? ""),
   };
 }
@@ -183,17 +185,19 @@ async function chatAttempt(
  *    每条都告诉用户下一步换什么。
  */
 export async function chatComplete(llm: LlmConfig, system: string, user: string, signal?: AbortSignal): Promise<string> {
+  // 参数回退与空正文重试共用时限和一次限流重试额度，不逐层放大请求次数。
+  const budget = llmRequestBudget(isLocalBaseUrl(llm.baseUrl) ? LLM_LOCAL_TIMEOUT_MS : LLM_REMOTE_TIMEOUT_MS, 1);
   let includeThinkingParam = Object.keys(thinkingParams(llm.model)).length > 0;
   let first: ChatAttempt;
   try {
-    first = await chatAttempt(llm, system, user, signal, MAX_TOKENS, includeThinkingParam);
+    first = await chatAttempt(llm, system, user, signal, MAX_TOKENS, budget, includeThinkingParam);
   } catch (e) {
     // A strict OpenAI-compatible gateway may reject the provider-specific
     // switch. Retry once without it; ordinary HTTP/auth failures still throw.
     const message = e instanceof Error ? e.message : String(e);
     if (!includeThinkingParam || !/HTTP 400/i.test(message) || !/thinking|unknown parameter|unsupported/i.test(message)) throw e;
     includeThinkingParam = false;
-    first = await chatAttempt(llm, system, user, signal, MAX_TOKENS, false);
+    first = await chatAttempt(llm, system, user, signal, MAX_TOKENS, budget, false);
   }
   if (first.content) return first.content;
   if (first.reasoning && first.finishReason !== "length") return first.reasoning;
@@ -201,9 +205,10 @@ export async function chatComplete(llm: LlmConfig, system: string, user: string,
   // 更准的诊断;用户主动取消照常中断
   let retry: ChatAttempt | null = null;
   try {
-    retry = await chatAttempt(llm, system, user, signal, RETRY_MAX_TOKENS, includeThinkingParam);
+    retry = await chatAttempt(llm, system, user, signal, RETRY_MAX_TOKENS, budget, includeThinkingParam);
   } catch (e) {
     if (signal?.aborted) throw e;
+    if (e instanceof LlmTransportError) throw e;
   }
   if (retry?.content) return retry.content;
   if (retry?.reasoning && retry.finishReason !== "length") return retry.reasoning;

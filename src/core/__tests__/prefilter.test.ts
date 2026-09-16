@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { afterEach, describe, it, expect, vi } from "vitest";
 import {
   chunkSegments,
   stripThinkBlocks,
@@ -9,9 +9,12 @@ import {
   prefilterTranscript,
   prefilterUserPrompt,
   PREFILTER_MIN_CHARS,
+  PREFILTER_CONCURRENCY,
   type ChatFn,
 } from "../highlight/prefilter";
 import type { Transcript, TranscriptSegment } from "../transcribe/types";
+
+afterEach(() => vi.restoreAllMocks());
 
 // 构造 n 句转写,每句 text 重复到指定长度
 function mockTranscript(n: number, charsPerSeg = 40): Transcript {
@@ -153,5 +156,53 @@ describe("prefilterTranscript(注入假 chat)", () => {
     const t = mockTranscript(20, 200); // 单块 4000 字
     const chat: ChatFn = async () => `{"windows":[{"start":1,"end":20}]}`; // 全入围
     expect(await prefilterTranscript(t, local, chat)).toBeNull();
+  });
+
+  it("长稿分段以有限并发处理，乱序完成也不丢块", async () => {
+    const t = mockTranscript(300, 100);
+    let inFlight = 0, peak = 0, calls = 0;
+    const completed: number[] = [];
+    const chat: ChatFn = async (_llm, _system, user) => {
+      calls++; inFlight++; peak = Math.max(peak, inFlight);
+      const first = Number(user.match(/\[(\d+)\]/)![1]);
+      await new Promise((resolve) => setTimeout(resolve, first === 1 ? 15 : 1));
+      completed.push(first); inFlight--;
+      return JSON.stringify({ windows: [{ start: first, end: first }] });
+    };
+    const out = await prefilterTranscript(t, local, chat);
+    expect(peak).toBe(PREFILTER_CONCURRENCY);
+    expect(calls).toBe(chunkSegments(t.segments).length);
+    expect(completed[0]).not.toBe(1);
+    expect(out).not.toBeNull();
+    for (const first of completed) expect(out!.transcript.segments.some((s) => s.id === first)).toBe(true);
+  });
+
+  it("用户停止后不再派发排队分段，不吞成全文回退", async () => {
+    const controller = new AbortController();
+    let calls = 0;
+    const chat: ChatFn = async () => {
+      if (++calls === PREFILTER_CONCURRENCY) controller.abort(new Error("user-stopped"));
+      return '{"windows":[]}';
+    };
+    await expect(prefilterTranscript(mockTranscript(300, 100), local, chat, controller.signal)).rejects.toThrow("user-stopped");
+    expect(calls).toBe(PREFILTER_CONCURRENCY);
+  });
+
+  it("总预算到期停止派发，未处理的内容仍保留", async () => {
+    const timeout = new AbortController();
+    vi.spyOn(AbortSignal, "timeout").mockReturnValue(timeout.signal);
+    const t = mockTranscript(200, 100);
+    const chunks = chunkSegments(t.segments);
+    let calls = 0;
+    const chat: ChatFn = async (_llm, _system, user) => {
+      const first = Number(user.match(/\[(\d+)\]/)![1]);
+      if (++calls === 4) timeout.abort();
+      return JSON.stringify({ windows: [{ start: first, end: first }] });
+    };
+    const out = await prefilterTranscript(t, local, chat);
+    expect(calls).toBe(4);
+    // 若筛减不足会回退全文，否则未派发块必须完整进入下一阶段。
+    const retained = new Set((out?.transcript ?? t).segments.map((s) => s.id));
+    for (const segment of chunks.slice(calls).flat()) expect(retained.has(segment.id)).toBe(true);
   });
 });

@@ -11,6 +11,7 @@
  */
 
 import type { ModelListResult } from "../shared/api-types";
+import { llmRequestBudget, modelErrorDetail, requestLlmText } from "./llm-transport";
 
 export type { ModelListResult };
 
@@ -42,21 +43,19 @@ export function parseModelIds(body: unknown): string[] {
  */
 export async function listModels(baseUrl: string, apiKey: string, signal?: AbortSignal): Promise<ModelListResult> {
   const url = `${baseUrl.replace(/\/+$/, "")}/models`;
-  const timer = AbortSignal.timeout(MODEL_LIST_TIMEOUT_MS);
   try {
-    const res = await fetch(url, {
+    const res = await requestLlmText(url, {
       headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : {},
-      signal: signal ? AbortSignal.any([signal, timer]) : timer,
-    });
-    const text = await res.text();
+    }, { signal, budget: llmRequestBudget(MODEL_LIST_TIMEOUT_MS) });
+    const text = res.text;
     if (!res.ok) {
-      return { ids: [], error: `HTTP ${res.status}: ${text.slice(0, 160)}` };
+      return { ids: [], error: `HTTP ${res.status}: ${modelErrorDetail(text, apiKey, 160)}` };
     }
     const ids = parseModelIds(JSON.parse(text));
     return ids.length > 0
       ? { ids, error: null }
       : { ids: [], error: "该端点没有返回模型清单 / endpoint returned no models" };
   } catch (e) {
-    return { ids: [], error: e instanceof Error ? e.message : String(e) };
+    return { ids: [], error: modelErrorDetail(e instanceof Error ? e.message : String(e), apiKey, 300) };
   }
 }

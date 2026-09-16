@@ -9,6 +9,7 @@ const OLLAMA = { baseUrl: "http://localhost:11434/v1", apiKey: "", model: "qwen3
 const CLOUD = { baseUrl: "https://api.atlascloud.ai/v1", apiKey: "sk-x", model: "qwen/qwen3.5-flash" };
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.unstubAllGlobals();
 });
 
@@ -43,6 +44,56 @@ describe("chatComplete 连接失败指引", () => {
 function chatResponse(message: Record<string, unknown>, finishReason = "stop"): Response {
   return new Response(JSON.stringify({ choices: [{ finish_reason: finishReason, message }] }), { status: 200 });
 }
+
+describe("chatComplete 请求恢复边界", () => {
+  it("限流恢复和 Qwen 参数回退共用一次重试额度", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response("busy", { status: 429, headers: { "retry-after": "0" } }))
+      .mockResolvedValueOnce(new Response("unsupported parameter: enable_thinking", { status: 400 }))
+      .mockResolvedValueOnce(new Response("busy again", { status: 503, headers: { "retry-after": "0" } }));
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(chatComplete(CLOUD, "s", "u")).rejects.toThrow("HTTP 503");
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(fetchMock.mock.calls.map((c) => JSON.parse(c[1].body).enable_thinking)).toEqual([false, false, undefined]);
+  });
+
+  it("参数回退只使用首次请求剩余的时间", async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi.fn()
+      .mockImplementationOnce(async () => {
+        vi.setSystemTime(Date.now() + 170_000);
+        return new Response("unsupported parameter: enable_thinking", { status: 400 });
+      })
+      .mockImplementation((_url, init: RequestInit) => new Promise((_resolve, reject) => {
+        init.signal!.addEventListener("abort", () => reject(init.signal!.reason));
+      }));
+    vi.stubGlobal("fetch", fetchMock);
+    const pending = chatComplete(CLOUD, "s", "u");
+    const check = expect(pending).rejects.toMatchObject({ kind: "timeout" });
+    await vi.advanceTimersByTimeAsync(10_000);
+    await check;
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("服务端要求长等待时保留等待提示并隐藏回显 Key", async () => {
+    const fetchMock = vi.fn(async () => new Response(`rate limited for ${CLOUD.apiKey}`, {
+      status: 429, headers: { "retry-after": "120" },
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    const error = await chatComplete(CLOUD, "s", "u").catch((e: Error) => e) as Error;
+    expect(error.message).toContain("120 秒");
+    expect(error.message).not.toContain(CLOUD.apiKey);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("空白正文仍可取回正常结束的 reasoning", async () => {
+    const fetchMock = vi.fn(async () => chatResponse({ content: " \n ", reasoning: '{"clips":[]}' }));
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(chatComplete(CLOUD, "s", "u")).resolves.toBe('{"clips":[]}');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});
 
 describe("chatComplete 空响应处理(issue #8)", () => {
   it("Qwen3 混合思考模型首请求关闭 thinking,避免正文预算被吃光", async () => {

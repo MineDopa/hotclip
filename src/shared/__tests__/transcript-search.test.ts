@@ -6,7 +6,7 @@ function segments(texts: string[]) { return texts.map((text, i) => ({ id: i + 1,
 describe("transcript search", () => {
   it("matches phrases across cue boundaries and maps marks to original text", () => {
     const index = indexTranscript(segments(["Hello,", "world!", "Another WORLD"]));
-    expect(searchTranscript(index, "hello world")[0]).toEqual({ segmentIds: [1, 2], startSec: 0, ranges: [{ segmentId: 1, start: 0, end: 5 }, { segmentId: 2, start: 0, end: 5 }] });
+    expect(searchTranscript(index, "hello world")[0]).toMatchObject({ segmentIds: [1, 2], startSec: 0, timing: "estimated", ranges: [{ segmentId: 1, start: 0, end: 5 }, { segmentId: 2, start: 0, end: 5 }] });
     expect(searchTranscript(index, "world")).toHaveLength(2);
   });
   it("supports compatibility forms, composed accents, Arabic, Cyrillic and astral Han", () => {
@@ -20,5 +20,36 @@ describe("transcript search", () => {
     const index = indexTranscript(segments(Array(2100).fill("match")));
     expect(searchTranscript(index, "???")).toEqual([]);
     expect(searchTranscript(index, "match")).toHaveLength(2000);
+  });
+  it("locates a late word instead of rewinding to the start of the sentence", () => {
+    const segment = { id: 7, text: "Hello, WORLD!", startSec: 10, endSec: 20, words: [
+      { text: "Hello", startSec: 11, endSec: 12, timingSource: "native" as const },
+      { text: "world", startSec: 17, endSec: 18, timingSource: "aligned" as const },
+    ] };
+    expect(searchTranscript(indexTranscript([segment]), "world")[0]).toMatchObject({ startSec: 17, endSec: 18, timing: "word" });
+  });
+  it("retains uncertain provenance instead of presenting edited word times as exact", () => {
+    expect(searchTranscript(indexTranscript(segments(["hello world"])), "world")[0]).toMatchObject({ timing: "estimated" });
+  });
+  it("falls back to sentence bounds for stale text or malformed word timing", () => {
+    const segment = { id: 1, text: "hello world", startSec: 2, endSec: 8, words: [
+      { text: "hello", startSec: 3, endSec: 4 }, { text: "world", startSec: 6, endSec: 7 },
+    ] };
+    for (const words of [[], [{ text: "stale", startSec: 3, endSec: 4 }],
+      [segment.words[0], { ...segment.words[1], startSec: NaN }],
+      [segment.words[0], { ...segment.words[1], startSec: 3.5 }],
+      [segment.words[0], { ...segment.words[1], endSec: 9 }]]) {
+      expect(searchTranscript(indexTranscript([{ ...segment, words }]), "world")[0]).toMatchObject({ startSec: 2, endSec: 8, timing: "segment" });
+    }
+  });
+  it("keeps UTF-16 text positions aligned with Unicode word timestamps", () => {
+    const segment = { id: 1, text: "Ｃａｆｅ́，𠀀你好", startSec: 0, endSec: 10, words: [
+      { text: "Café", startSec: 1, endSec: 2 },
+      { text: "𠀀", startSec: 5, endSec: 6 },
+      { text: "你好", startSec: 7, endSec: 8 },
+    ] };
+    const hit = searchTranscript(indexTranscript([segment]), "𠀀你")[0];
+    expect(hit).toMatchObject({ startSec: 5, endSec: 8, timing: "word" });
+    expect(segment.text.slice(hit.ranges[0].start, hit.ranges[0].end)).toBe("𠀀你");
   });
 });

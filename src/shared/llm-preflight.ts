@@ -23,11 +23,14 @@ export type PreflightVerdict =
 
 /** 本地端点(Ollama/LM Studio 等):不需要 Key,但需要服务真的在本机跑着。 */
 export function isLocalBaseUrl(baseUrl: string): boolean {
-  return /localhost|127\.0\.0\.1/.test(baseUrl);
+  try {
+    const url = new URL(baseUrl);
+    return ["http:", "https:"].includes(url.protocol) && ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
+  } catch { return false; }
 }
 
 /** 连接类失败的错误特征(undici 的 fetch failed、系统级 ECONNREFUSED、超时)。 */
-const CONNECT_FAIL = /fetch failed|ECONNREFUSED|ENOTFOUND|ETIMEDOUT|ECONNRESET|abort|timeout|network/i;
+const CONNECT_FAIL = /fetch failed|ECONNREFUSED|ENOTFOUND|ETIMEDOUT|ECONNRESET|abort|timeout|timed\s*out|network/i;
 
 /** Ollama 允许省略 :latest 标签——"llama3" 命中已安装的 "llama3:latest"。 */
 function hasModel(ids: string[], model: string): boolean {

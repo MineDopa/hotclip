@@ -4,11 +4,19 @@
 
 - 本地转写每完成一个 28 秒识别窗口就原子保存结果。停止、退出或异常中断后，对同一素材使用同一引擎再次开始，会复用已完成窗口。素材版本、模型配置、语言或运行契约变化会重新计算。可用“从头重新转写”清除本次进度。
 - PCM 保存在临时磁盘文件，识别时每次只读一个窗口。恢复时只抽取剩余音频；完整结果缓存仍然保留。缓存不可写时仍可完成转写，但不能保证下次恢复。云端 ElevenLabs 不提供本地分段恢复。
-- 逐句稿支持忽略大小写、标点和空白的跨句搜索，兼容组合重音、全角字符与多种文字。Enter / Shift+Enter 跳到下一项 / 上一项；匹配内容高亮。每次搜索最多展示 2,000 项结果，缩小关键词可继续定位。
-- 长稿只渲染当前视口附近的句子，行高随文字内容变化。编辑区采用紧凑预览，时间轴可展开；较小窗口内仍可滚动到全部控件。
+- 逐句稿支持忽略大小写、标点和空白的跨句搜索，兼容组合重音、全角字符与多种文字。Enter / Shift+Enter 跳到下一项 / 上一项；匹配内容高亮。搜索范围可选全部 / 台词 / 画面，文字与已扫描的画面证据按时间统一导航，首次 Enter 定位第一项。最多展示 2,000 条台词命中和 200 条画面命中，达到上限时显示 +，可缩小关键词继续定位。
+- 原文与词序、时间一致时直接定位命中字词；估算词时间标为“句内估时”，词序或时间不可靠时退回句级定位。可“试听上下文”（前后各 2 秒、最多 30 秒），再点“选这段”打开已勾选完整命中句的选段窗口。画面命中预选附近台词；没有附近台词时仅提供定位和试听。选段确认后加入候选，可继续调整、撤销和重做。
+- 逐句稿和选段窗口都只渲染当前视口附近的句子，行高随文字内容变化。编辑区采用紧凑预览，时间轴可展开；较小窗口内仍可滚动到全部控件。
 - 打开“校准时间”，勾选句子或选择当前待复核句，生成校准预览。支持原时间 / 新时间试听，确认应用后可用工作台撤销或重做。每批最多 20 句、总计 5 分钟，单句不超过 2 分钟 / 2,000 字符。校准保留原文和句子边界。
 - Paraformer 校准仅用于中文 / 英文；其他语种选择 Qwen3 与明确语言。模型不支持、匹配不足或时间无效的句子会保留原时间并计入跳过项。自动语言无法明确识别时，请手动指定。
 - 导出字幕按文字类型使用不同阅读速度预设，合并能容纳的短行，并在相邻字幕、说话人和剪辑边界内延长显示。ASS、动态字幕、SRT 与质检共用显示规划；逐字高亮的语音时间不随显示延长而改变。仍无法满足阅读速度的字幕继续报告告警。
+
+## 模型连接与长稿预筛
+
+- 文字分析每轮调用的等待上限为云端 3 分钟、本机 5 分钟；参数兼容回退和空正文重试共用该时限。画面研判每次最多 1 分钟，模型列表最多 12 秒。等待上限包含接收响应正文，接口只返回响应头后卡住也会结束等待。
+- 文字和画面请求遇到短暂限流（HTTP 429）或服务忙（HTTP 503）时，最多额外重试一次；遵守服务端不超过 5 秒的等待指示，未提供时等待 1 秒。文字分析中这个重试额度也由参数回退与空正文重试共用。明确的余额不足、鉴权失败、断网和超时不自动重发；服务端要求更长等待时直接提示失败，文字分析会显示建议等待时长。模型列表失败后仍可手动填写模型名。
+- 单次成功响应最多读取 2 MiB，错误详情中的当前 API Key 与 Bearer 凭据会被隐藏。停止任务可中断正在接收的响应和重试等待，但已被服务端接收的推理是否立即停止由服务端决定。
+- 开启本地预筛后，长稿最多同时处理 2 段，共用 2 分钟预筛时限；超时不再派发排队段落。失败或尚未处理的段落会完整保留；整体不可用或筛选不足时沿用全文分析。地址识别支持 IPv4 / IPv6 回环与 localhost，仅根据实际主机名判断是否本机。
 
 ## 可选 Qwen3 本地服务
 
@@ -58,7 +66,9 @@ pnpm quality:eval:asr fixtures.json sensevoice,qwen3
 
 Local transcription checkpoints each completed 28-second decode window and resumes the same source/model configuration after interruption. PCM stays on disk; only one window is read at a time. Use **Start over** to discard that run's partial results. Cache faults lose reuse, not the ability to transcribe; cloud jobs do not support local window recovery.
 
-The transcript supports Unicode-aware cross-sentence search, highlighted matches, Enter / Shift+Enter navigation and dynamic-height virtualization. Search is capped at 2,000 matches. The transcript workspace provides a compact player and an expandable timeline.
+The transcript supports Unicode-aware cross-sentence search and chronological navigation across speech and scanned visual evidence. Filter by All / Speech / Visuals. The first Enter seeks the first match; subsequent Enter / Shift+Enter move forward / backward. Limits are 2,000 speech matches and 200 visual matches, with + displayed at the cap. Matching word times are used only when the word sequence and timing are valid; estimated times are labeled and stale words fall back to sentence bounds.
+
+**Play context** includes up to two seconds on either side, capped at 30 seconds. **Pick this moment** opens the picker with complete matched sentences selected; visual matches select nearby speech only. Review and confirm before adding a candidate, then undo or redo as needed. Both the transcript and picker virtualize long lists. Picker search spans sentences and preserves selections while filtering. The transcript workspace provides a compact player and an expandable timeline.
 
 **Align timing** previews selected or uncertain sentences before an explicit apply. Listen before/after, apply, then undo or redo. Limits: 20 sentences / 5 minutes per batch, 2 minutes / 2,000 characters per sentence. Original text and cue boundaries remain intact. Unsupported languages, poor matches and invalid timings keep the originals with a skipped count. Paraformer is Chinese/English; choose Qwen3 and an explicit supported language for other scripts.
 
@@ -67,3 +77,7 @@ Exports share a language-aware caption display plan across ASS, web overlays, SR
 Qwen3 is optional and user-managed. Follow the Python commands above, then choose Qwen3-ASR and check the loopback URL in the engine settings. The service accepts `--model 0.6B|1.7B`, `--device cpu|mps|cuda:0`, `--port` and `--aligner`. First load downloads model weights locally. HotClip installs no Python runtime automatically and rejects remote service URLs and redirects. Without the aligner, word times are marked estimated. The ASR and alignment language sets differ; see the explicit list above. Client cancellation stops waiting; a service already inferring may finish that request before becoming available again.
 
 Run `pnpm quality:eval:asr fixtures.json sensevoice,qwen3` against locally annotated fixtures to measure character/word errors, runtime, silence hallucinations and timing provenance. Paths are relative to the manifest. Memory is a host-process sample, not total service memory; boundary error requires manual `boundaries` labels. The small CPU smoke covered 0.6B, Chinese/English synthesized speech and silence; it does not establish general accuracy or GPU/cross-platform performance. The 1.7B path remains opt-in and was not benchmarked in this run.
+
+**Model requests** have deadlines covering both response headers and body: text analysis gets 3 minutes for remote services or 5 minutes for loopback services, shared across parameter fallback and empty-content retries; visual calls get 1 minute and model lists 12 seconds. Text and vision requests retry HTTP 429/503 at most once, honoring a server wait of up to 5 seconds (1 second when absent). Text fallback attempts share that retry allowance. Recognized insufficient-quota errors, authentication failures, network failures and timeouts are not automatically resent. Longer waits return an error; text analysis includes the suggested delay. Model-list failure still permits manual model entry. Successful responses are limited to 2 MiB; error details redact the configured key and Bearer credentials. Cancellation stops the client request or retry wait; server-side inference may continue.
+
+**Local screening** runs at most two chunks concurrently within a shared two-minute deadline. Failed or unprocessed chunks remain intact, and unavailable or ineffective screening falls back to the full transcript. Local model detection checks the URL hostname and supports localhost, IPv4 loopback and IPv6 loopback.

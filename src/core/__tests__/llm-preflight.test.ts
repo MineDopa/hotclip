@@ -14,6 +14,12 @@ describe("isLocalBaseUrl", () => {
     expect(isLocalBaseUrl("http://127.0.0.1:1234/v1")).toBe(true);
     expect(isLocalBaseUrl(CLOUD)).toBe(false);
   });
+  it("支持 IPv6 回环，但不把路径、用户名或相似域名当作本机", () => {
+    expect(isLocalBaseUrl("http://[::1]:11434/v1")).toBe(true);
+    for (const url of ["https://localhost.example.com/v1", "https://example.com/127.0.0.1", "https://localhost@example.com/v1", "file://localhost/path", "localhost"]) {
+      expect(isLocalBaseUrl(url)).toBe(false);
+    }
+  });
 });
 
 describe("preflightVerdict", () => {
@@ -22,6 +28,7 @@ describe("preflightVerdict", () => {
     expect(preflightVerdict({ ids: [], error: "connect ECONNREFUSED 127.0.0.1:11434" }, OLLAMA, "qwen3:8b")).toEqual({
       kind: "local-down",
     });
+    expect(preflightVerdict({ ids: [], error: "Model response timed out" }, "http://[::1]:11434/v1", "qwen3:8b")).toEqual({ kind: "local-down" });
   });
 
   it("云端连不上 → unreachable(网络/地址问题)", () => {

@@ -16,6 +16,8 @@ export const CHUNK_TARGET_CHARS = 2600;
 export const WINDOW_PAD_SEGMENTS = 2;
 /** 整个初筛的总时限;超时回退全文(本地模型慢不能拖垮整条链路)。 */
 export const PREFILTER_TIMEOUT_MS = 120_000;
+/** 本机模型只允许少量在途请求，长稿的其余分段排队。 */
+export const PREFILTER_CONCURRENCY = 2;
 
 /** 与 chatComplete 同形的注入点(避免与 detect.ts 循环依赖,也方便测试)。 */
 export type ChatFn = (llm: LlmConfig, system: string, user: string, signal?: AbortSignal) => Promise<string>;
@@ -141,6 +143,7 @@ export async function prefilterTranscript(
   chat: ChatFn,
   signal?: AbortSignal
 ): Promise<PrefilterOutcome | null> {
+  signal?.throwIfAborted();
   const totalChars = transcript.segments.reduce((n, s) => n + s.text.length, 0);
   if (totalChars < PREFILTER_MIN_CHARS) return null;
 
@@ -156,23 +159,31 @@ export async function prefilterTranscript(
 
   let anySucceeded = false;
   const windows: IdWindow[] = [];
-  const results = await Promise.all(
-    chunks.map(async (chunk) => {
-      try {
-        const content = await chat(local, system, prefilterUserPrompt(chunk, zh, local.model), combined);
-        return { chunk, windows: parseWindows(content, validIds) };
-      } catch {
-        // 单块失败 → 整块入围,交给云端(贵一点,但绝不漏内容)
-        return { chunk, windows: [{ start: chunk[0].id, end: chunk[chunk.length - 1].id }], failed: true };
+  // 未开始或失败的块默认全部保留；超时停止派发，不能把未看过的内容筛掉。
+  const results = chunks.map((chunk) => ({
+    windows: [{ start: chunk[0].id, end: chunk[chunk.length - 1].id }], failed: true,
+  }));
+  let nextChunk = 0;
+  await Promise.all(
+    Array.from({ length: Math.min(PREFILTER_CONCURRENCY, chunks.length) }, async () => {
+      while (!combined.aborted && nextChunk < chunks.length) {
+        const index = nextChunk++;
+        const chunk = chunks[index];
+        try {
+          const content = await chat(local, system, prefilterUserPrompt(chunk, zh, local.model), combined);
+          if (!combined.aborted) results[index] = { windows: parseWindows(content, validIds), failed: false };
+        } catch {
+          // 保留整块，交由下一阶段处理。
+        }
       }
     })
   );
   for (const r of results) {
-    if (!("failed" in r && r.failed)) anySucceeded = true;
+    if (!r.failed) anySucceeded = true;
     windows.push(...r.windows);
   }
   // 上游主动取消要往外抛,不能吞成"回退全文"
-  if (signal?.aborted) throw new Error("detection cancelled");
+  signal?.throwIfAborted();
   if (!anySucceeded) return null; // 端点整体不可用 → 漏斗不生效
   if (windows.length === 0) return null; // 小模型判"全无爆点"不可信 → 全文直发
 

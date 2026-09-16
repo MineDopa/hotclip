@@ -13,6 +13,7 @@ import { useSession } from "../../stores/session-store";
 import { editSegmentText } from "../../../../shared/edit-transcript";
 import { summarizeTimingQuality } from "../../../../shared/transcript-quality";
 import { searchVisualEvidence, type VisualEvidenceNote } from "../../../../shared/evidence-search";
+import { evidenceContext, evidenceResults, nextEvidenceIndex, type EvidenceSource } from "../../../../shared/evidence-navigation";
 import { diffReplacement, applyGlossaryToTranscript, countGlossaryHits, upsertGlossaryEntry } from "../../../../shared/glossary";
 import { GlossaryModal } from "../GlossaryModal";
 import type { GlossaryEntry, Transcript } from "../../../../shared/api-types";
@@ -26,7 +27,7 @@ function formatClock(totalSeconds: number): string {
   return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
 }
 
-export function TranscriptPanel({ transcript, visualNotes, onSeek, onAudition }: { transcript: Transcript; visualNotes?: readonly VisualEvidenceNote[]; onSeek: (sec: number) => void; onAudition: (start: number, end: number) => void }): React.JSX.Element {
+export function TranscriptPanel({ transcript, visualNotes, onSeek, onAudition, onPick }: { transcript: Transcript; visualNotes?: readonly VisualEvidenceNote[]; onSeek: (sec: number) => void; onAudition: (start: number, end: number) => void; onPick: (segmentIds: number[]) => void }): React.JSX.Element {
   const t = useT("transcribe");
   const { editTranscript } = useSession();
   const [editingSeg, setEditingSeg] = useState<number | null>(null);
@@ -34,7 +35,8 @@ export function TranscriptPanel({ transcript, visualNotes, onSeek, onAudition }:
   const [pending, setPending] = useState<{ entry: GlossaryEntry; count: number } | null>(null);
   const [showTimingReview, setShowTimingReview] = useState(false);
   const [query, setQuery] = useState("");
-  const [activeHit, setActiveHit] = useState(0);
+  const [activeHit, setActiveHit] = useState(-1);
+  const [source, setSource] = useState<EvidenceSource>("all");
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [alignmentOpen, setAlignmentOpen] = useState(false);
   const timingReviewIds = useMemo(() => new Set(
@@ -45,16 +47,19 @@ export function TranscriptPanel({ transcript, visualNotes, onSeek, onAudition }:
   const searchIndex = useMemo(() => indexTranscript(transcript.segments), [transcript.segments]);
   const hits = useMemo(() => searchTranscript(searchIndex, query).filter((hit) => !showTimingReview || hit.segmentIds.some((id) => timingReviewIds.has(id))), [searchIndex, query, showTimingReview, timingReviewIds]);
   const visualHits = useMemo(() => searchVisualEvidence(visualNotes, query), [visualNotes, query]);
-  const hit = hits[Math.min(activeHit, Math.max(0, hits.length - 1))];
-  const moveHit = (delta: number): void => {
-    if (!hits.length) return;
-    const next = (activeHit + delta + hits.length) % hits.length;
-    setActiveHit(next); onSeek(hits[next].startSec);
+  const results = useMemo(() => evidenceResults(hits, visualHits, transcript.durationSec, source), [hits, visualHits, transcript.durationSec, source]);
+  const result = results[Math.max(0, Math.min(activeHit, results.length - 1))];
+  const hit = result?.kind === "transcript" ? result.hit : undefined;
+  const context = useMemo(() => result ? evidenceContext(result, transcript.segments, transcript.durationSec) : null, [result, transcript]);
+  const moveHit = (delta: 1 | -1): void => {
+    const next = nextEvidenceIndex(activeHit, results.length, delta);
+    if (next < 0) return;
+    setActiveHit(next); onSeek(results[next].startSec);
   };
   const visibleSegments = useMemo(() => {
-    const matched = query.trim() ? new Set(hits.flatMap((h) => h.segmentIds)) : null;
+    const matched = query.trim() ? new Set(results.flatMap((r) => r.kind === "transcript" ? r.hit.segmentIds : [])) : null;
     return transcript.segments.filter((s) => (!showTimingReview || timingReviewIds.has(s.id)) && (!matched || matched.has(s.id)));
-  }, [transcript.segments, showTimingReview, timingReviewIds, query, hits]);
+  }, [transcript.segments, showTimingReview, timingReviewIds, query, results]);
 
   const commitSegEdit = (segId: number, value: string): void => {
     setEditingSeg(null);
@@ -92,7 +97,7 @@ export function TranscriptPanel({ transcript, visualNotes, onSeek, onAudition }:
             type="button"
             title={t("timingReviewHint")}
             aria-pressed={showTimingReview}
-            onClick={() => setShowTimingReview((value) => !value)}
+            onClick={() => { setShowTimingReview((value) => !value); setActiveHit(-1); }}
             className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-semibold transition-colors ${
               showTimingReview ? "bg-amber-500/10 text-amber-400" : "text-mut hover:text-amber-400"
             }`}
@@ -112,27 +117,47 @@ export function TranscriptPanel({ transcript, visualNotes, onSeek, onAudition }:
       </div>
       <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-line/60 px-3 py-2 text-xs">
         <label className="flex min-w-0 flex-1 items-center gap-2">{t("searchLabel")}
-          <input type="search" value={query} maxLength={500} onChange={(e) => { setQuery(e.target.value); setActiveHit(0); }} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); moveHit(e.shiftKey ? -1 : 1); } }} placeholder={t("searchHint")} className="min-w-0 flex-1 rounded border border-line bg-panel-2 px-2 py-1.5 outline-none focus:border-ember" />
+          <input type="search" value={query} maxLength={500} onChange={(e) => { setQuery(e.target.value); setActiveHit(-1); }} onKeyDown={(e) => { if (e.key === "Enter" && !e.nativeEvent.isComposing) { e.preventDefault(); moveHit(e.shiftKey ? -1 : 1); } }} placeholder={t("searchHint")} className="min-w-0 flex-1 rounded border border-line bg-panel-2 px-2 py-1.5 outline-none focus:border-ember" />
         </label>
         {query.trim() && <>
-          <span role="status">{t("searchCount", { current: hits.length ? Math.min(activeHit + 1, hits.length) : 0, n: hits.length === 2000 ? "2000+" : hits.length })}</span>
-          {visualHits.length > 0 && <span className="text-sky-300/80">{t("visualSearchCount", { n: visualHits.length })}</span>}
-          <button type="button" disabled={!hits.length} aria-label={t("searchPrevious")} onClick={() => moveHit(-1)} className="rounded border border-line px-2 py-1.5 disabled:opacity-40">↑</button>
-          <button type="button" disabled={!hits.length} aria-label={t("searchNext")} onClick={() => moveHit(1)} className="rounded border border-line px-2 py-1.5 disabled:opacity-40">↓</button>
+          <span role="status">{t("searchCount", { current: results.length ? Math.max(1, Math.min(activeHit + 1, results.length)) : 0, n: `${results.length}${(source !== "visual" && hits.length === 2000) || (source !== "transcript" && visualHits.length === 200) ? "+" : ""}` })}</span>
+          <button type="button" disabled={!results.length} aria-label={t("searchPrevious")} onClick={() => moveHit(-1)} className="rounded border border-line px-2 py-1.5 disabled:opacity-40">↑</button>
+          <button type="button" disabled={!results.length} aria-label={t("searchNext")} onClick={() => moveHit(1)} className="rounded border border-line px-2 py-1.5 disabled:opacity-40">↓</button>
         </>}
         <button type="button" aria-expanded={alignmentOpen} onClick={() => setAlignmentOpen((v) => !v)} className="rounded border border-line px-2 py-1.5">{t("alignToggle")}</button>
       </div>
-      {query.trim() && visualHits.length > 0 && (
+      {query.trim() && <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-line/60 px-3 py-2 text-xs" role="group" aria-label={t("searchSource")}>
+        {(["all", "transcript", "visual"] as const).map((value) => <button type="button" key={value} aria-pressed={source === value} onClick={() => { setSource(value); setActiveHit(-1); }} className={`rounded-md border px-2 py-1 transition-colors ${source === value ? "border-ember/60 bg-ember/10 text-fg" : "border-line text-mut hover:text-fg"}`}>{t(`searchSource_${value}`)}</button>)}
+        <span className="text-mut">{t("searchKeyboardHint")}</span>
+      </div>}
+      {result && context && <div className="shrink-0 border-b border-line/60 bg-panel-2/40 px-3 py-2 text-xs" aria-label={t("searchCurrent")}>
+        <div className="flex flex-wrap items-center gap-2 text-mut">
+          <span>{t(result.kind === "visual" ? "visualSearchLabel" : "searchSource_transcript")}</span>
+          <span className="font-mono text-ember">{formatClock(result.startSec)}</span>
+          {result.kind === "transcript" && <span>{t(`searchTiming_${result.hit.timing}`)}</span>}
+        </div>
+        <p className="mt-1 line-clamp-2 break-words leading-relaxed">{result.kind === "visual"
+          ? result.hit.match === "screen-text" ? result.hit.visibleText?.join(" / ") : result.hit.note
+          : result.hit.ranges.map((range) => transcript.segments.find((s) => s.id === range.segmentId)?.text.slice(range.start, range.end) ?? "").join(" … ")}</p>
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <button type="button" onClick={() => onSeek(result.startSec)} className="rounded-md border border-line px-2.5 py-1.5 hover:border-mut">{t("searchLocate")}</button>
+          <button type="button" onClick={() => onAudition(context.startSec, context.endSec)} className="rounded-md border border-line px-2.5 py-1.5 hover:border-mut">{t("searchAudition")}</button>
+          <button type="button" disabled={!context.segmentIds.length} onClick={() => onPick(context.segmentIds)} className="rounded-md border border-ember/50 bg-ember/10 px-2.5 py-1.5 text-ember hover:border-ember disabled:opacity-40">{t("searchPick")}</button>
+          <span className="text-mut">{t(context.segmentIds.length ? "searchPickHint" : "searchNoNearbySpeech")}</span>
+        </div>
+      </div>}
+      {query.trim() && source !== "transcript" && visualHits.length > 0 && (
         <div className="shrink-0 border-b border-line/60 px-3 py-2" aria-label={t("visualSearchLabel")}>
           <p className="mb-1 text-[10px] font-bold uppercase tracking-wide text-sky-400/80">{t("visualSearchLabel")}</p>
           <div className="flex max-h-24 flex-wrap gap-1.5 overflow-y-auto">
-            {visualHits.map((item) => (
+            {results.flatMap((r, index) => r.kind === "visual" ? [{ item: r.hit, index, id: r.id }] : []).map(({ item, index, id }) => (
               <button
                 type="button"
                 key={item.id}
-                onClick={() => onSeek(item.t)}
+                aria-pressed={result?.id === id}
+                onClick={() => { setActiveHit(index); onSeek(item.t); }}
                 title={item.visibleText?.length ? item.visibleText.join(" / ") : item.note}
-                className="max-w-full truncate rounded-md border border-sky-400/25 bg-sky-400/5 px-2 py-1 text-left text-[11px] text-sky-200 transition-colors hover:border-sky-300/60 hover:bg-sky-400/10"
+                className={`max-w-full truncate rounded-md border px-2 py-1 text-left text-[11px] text-sky-200 transition-colors hover:border-sky-300/60 hover:bg-sky-400/10 ${result?.id === id ? "border-sky-300/60 bg-sky-400/15" : "border-sky-400/25 bg-sky-400/5"}`}
               >
                 <span className="mr-1 font-mono text-[10px] text-sky-300/80">{formatClock(item.t)}</span>
                 {item.match === "screen-text" ? item.visibleText?.join(" / ") : item.note}
@@ -174,7 +199,7 @@ export function TranscriptPanel({ transcript, visualNotes, onSeek, onAudition }:
           </button>
         </div>
       )}
-      {visibleSegments.length === 0 && visualHits.length === 0 && <p className="p-4 text-sm text-mut" role="status">{t("searchEmpty")}</p>}
+      {visibleSegments.length === 0 && results.length === 0 && <p className="p-4 text-sm text-mut" role="status">{t("searchEmpty")}</p>}
       <VirtualTranscriptList segments={visibleSegments} targetId={hit?.segmentIds.find((id) => !showTimingReview || timingReviewIds.has(id))} targetKey={`${query}:${activeHit}`} pinnedId={editingSeg} label={t("searchResults")}>
         {(seg) => (
           <div key={seg.id} className={`group/seg flex items-baseline gap-2 rounded-lg px-2.5 py-2 transition-colors hover:bg-panel-2 ${hit?.segmentIds.includes(seg.id) ? "bg-ember/10" : ""}`}>

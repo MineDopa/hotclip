@@ -178,6 +178,7 @@ export function Workbench({ onCloseProject }: { onCloseProject: () => void }): R
   const [currentSec, setCurrentSec] = useState(0);
   const [reviewId, setReviewId] = useState<number | null>(null);
   const [showPick, setShowPick] = useState(false);
+  const [pickInitialIds, setPickInitialIds] = useState<number[]>([]);
   const [showBrand, setShowBrand] = useState(false);
   const [showWatch, setShowWatch] = useState(false);
   const [showExportPanel, setShowExportPanel] = useState(false);
@@ -270,6 +271,7 @@ export function Workbench({ onCloseProject }: { onCloseProject: () => void }): R
       };
       s.addCandidate(cand);
       setShowPick(false);
+      setTab("candidates");
     },
     []
   );
@@ -437,7 +439,7 @@ export function Workbench({ onCloseProject }: { onCloseProject: () => void }): R
                 <button
                   type="button"
                   title={th("pickHint")}
-                  onClick={() => setShowPick(true)}
+                  onClick={() => { setPickInitialIds([]); setShowPick(true); }}
                   className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-line px-2.5 py-1.5 text-[11px] font-semibold whitespace-nowrap text-mut transition-colors hover:border-mut hover:text-fg"
                 >
                   <LuTextSelect className="h-3 w-3" />
@@ -445,7 +447,7 @@ export function Workbench({ onCloseProject }: { onCloseProject: () => void }): R
                 </button>
               </div>
               {tab === "transcript" ? (
-                <TranscriptPanel transcript={transcript} visualNotes={stats.vision?.notes} onSeek={seek} onAudition={(startSec, endSec) => setTransportCommand((previous) => ({ id: (previous?.id ?? 0) + 1, action: "audition", startSec, endSec }))} />
+                <TranscriptPanel transcript={transcript} visualNotes={stats.vision?.notes} onSeek={seek} onPick={(ids) => { setPickInitialIds(ids); setShowPick(true); }} onAudition={(startSec, endSec) => setTransportCommand((previous) => ({ id: (previous?.id ?? 0) + 1, action: "audition", startSec, endSec }))} />
               ) : !llmReady ? (
                 // LLM 未配置:指路设置中心(配置本体已移到那里)
                 <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-line/70 p-6 text-center">
@@ -529,7 +531,7 @@ export function Workbench({ onCloseProject }: { onCloseProject: () => void }): R
       )}
       {showBrand && <BrandStyleModal onClose={() => setShowBrand(false)} />}
       {showWatch && <WatchFolderModal onClose={() => setShowWatch(false)} />}
-      {showPick && transcript && <TranscriptPickModal transcript={transcript} onAdd={addManualClip} onClose={() => setShowPick(false)} />}
+      {showPick && transcript && <TranscriptPickModal transcript={transcript} initialSegmentIds={pickInitialIds} onAdd={addManualClip} onClose={() => setShowPick(false)} />}
       {(() => {
         const reviewing = reviewId !== null ? candidates?.find((c) => c.id === reviewId) : undefined;
         if (!reviewing || !transcript) return null;

@@ -4,6 +4,7 @@
  */
 import { create } from "zustand";
 import type { LlmConfig } from "../../../shared/api-types";
+import { isLocalBaseUrl } from "../../../shared/llm-preflight";
 
 const STORAGE_KEY = "hotclip-llm";
 const PREFILTER_KEY = "hotclip-prefilter";
@@ -198,6 +199,6 @@ export const useLlmStore = create<LlmState>((set, get) => ({
 
 /** Ready = enough fields to attempt a call (Ollama needs no key). */
 export function isLlmReady(config: LlmConfig): boolean {
-  const needsKey = !/localhost|127\.0\.0\.1/.test(config.baseUrl);
+  const needsKey = !isLocalBaseUrl(config.baseUrl);
   return Boolean(config.baseUrl && config.model && (!needsKey || config.apiKey));
 }
