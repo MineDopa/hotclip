@@ -1,0 +1,7 @@
+nodeLinker: hoisted
+allowBuilds:
+  electron: true
+  electron-winstaller: set this to true or false
+  esbuild: true
+  ffmpeg-static: set this to true or false
+  onnxruntime-node: set this to true or false
