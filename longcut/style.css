@@ -1,0 +1,272 @@
+/* LongCut —— 白绿清冷，克制优先：界面不抢内容，颜色只用来区分「留 / 剪」 */
+
+:root {
+  --bg:      #f5f8f6;
+  --panel:   #ffffff;
+  --line:    #e3e9e6;
+  --text:    #22302a;
+  --muted:   #7b8b84;
+  --green:   #2f8f62;
+  --green-2: #e9f3ee;
+  --cut:     #c3cbc7;
+  --cut-bg:  #f2f4f3;
+  --danger:  #b4554d;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 14px/1.65 "Microsoft YaHei", -apple-system, "Segoe UI", sans-serif;
+}
+
+.hidden { display: none !important; }
+
+button {
+  font: inherit;
+  padding: 7px 15px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--panel);
+  color: var(--text);
+  cursor: pointer;
+  transition: .15s;
+}
+button:hover { border-color: var(--green); color: var(--green); }
+button.primary {
+  background: var(--green);
+  border-color: var(--green);
+  color: #fff;
+}
+button.primary:hover { background: #277954; color: #fff; }
+
+input[type="text"], input:not([type]) {
+  font: inherit;
+  padding: 7px 11px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--panel);
+  color: var(--text);
+  outline: none;
+}
+input:focus { border-color: var(--green); }
+
+/* -------- 顶栏 -------- */
+header {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  padding: 14px 22px 4px;
+  flex-wrap: wrap;
+}
+header h1 {
+  margin: 0;
+  font-size: 19px;
+  letter-spacing: .5px;
+  font-weight: 600;
+}
+header .sub { color: var(--muted); font-size: 13px; }
+header .tip { margin-left: auto; color: var(--muted); font-size: 12px; }
+
+/* -------- 打开素材 -------- */
+#open-bar {
+  display: flex;
+  gap: 8px;
+  padding: 10px 22px 14px;
+}
+#open-bar input { flex: 1; min-width: 0; }
+
+/* -------- 素材浏览 -------- */
+#picker {
+  margin: 0 22px 12px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--panel);
+  overflow: hidden;
+}
+.picker-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line);
+  background: #fbfcfb;
+}
+.picker-head span {
+  flex: 1;
+  color: var(--muted);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#picker-body { max-height: 260px; overflow: auto; padding: 6px 0; }
+#picker-body ul { list-style: none; margin: 0; padding: 0; }
+#picker-body li {
+  padding: 5px 14px;
+  cursor: pointer;
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+#picker-body li:hover { background: var(--green-2); }
+#picker-body li.dir { color: var(--muted); }
+#picker-body li.file::before { content: "▸ "; color: var(--green); }
+
+/* -------- 状态条 -------- */
+#status {
+  margin: 0 22px 12px;
+  padding: 11px 14px;
+  border-radius: 9px;
+  background: var(--green-2);
+  color: #24694a;
+  font-size: 13px;
+}
+#status.error { background: #fbeeec; color: var(--danger); }
+
+/* -------- 工作区 -------- */
+#workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 400px;
+  gap: 16px;
+  padding: 0 22px 26px;
+  align-items: start;
+}
+@media (max-width: 1000px) {
+  #workspace { grid-template-columns: 1fr; }
+}
+
+#left, #right {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  overflow: hidden;
+}
+#right { padding-bottom: 12px; }
+
+.pane-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 14px;
+  border-bottom: 1px solid var(--line);
+  background: #fbfcfb;
+}
+.pane-head .title { font-weight: 600; font-size: 13px; }
+.pane-head .hint { margin-left: auto; color: var(--muted); font-size: 12px; }
+
+/* -------- 转写稿 -------- */
+#lines {
+  max-height: calc(100vh - 260px);
+  overflow: auto;
+  padding: 6px 0;
+}
+
+.line {
+  display: flex;
+  gap: 10px;
+  padding: 5px 14px;
+  border-left: 3px solid transparent;
+  cursor: pointer;
+  user-select: none;
+}
+.line:hover { background: #f7faf8; }
+.line .tc {
+  flex: none;
+  width: 62px;
+  color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  padding-top: 1px;
+}
+.line .tx { flex: 1; min-width: 0; }
+
+/* 标剪的句子：左侧红条 + 灰底 + 删除线，一眼看出会消失 */
+.line.cut {
+  border-left-color: var(--danger);
+  background: var(--cut-bg);
+}
+.line.cut .tx {
+  color: var(--cut);
+  text-decoration: line-through;
+}
+.line.cut .tc { color: var(--cut); }
+
+/* Shift 选段过程中的临时高亮 */
+.line.sel { background: #eef4f1; }
+
+/* -------- 预览 -------- */
+#video {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  background: #0d1210;
+  display: block;
+}
+
+/* -------- 时间轴 -------- */
+#timeline {
+  position: relative;
+  height: 26px;
+  margin: 12px 14px 8px;
+  border-radius: 5px;
+  background: var(--green);
+  overflow: hidden;
+}
+/* 被剪掉的区间 = 灰色覆盖块 */
+.tl-cut {
+  position: absolute;
+  top: 0; bottom: 0;
+  background: var(--cut);
+  /* 斜纹，和保留段区分得更明显 */
+  background-image: repeating-linear-gradient(
+    45deg, transparent, transparent 4px,
+    rgba(255,255,255,.45) 4px, rgba(255,255,255,.45) 8px
+  );
+}
+#tl-cursor {
+  position: absolute;
+  top: 0; bottom: 0;
+  width: 2px;
+  background: #16332a;
+  pointer-events: none;
+}
+
+#stats {
+  padding: 0 14px 10px;
+  color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* -------- 导出 -------- */
+#export-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 11px 14px 0;
+  border-top: 1px solid var(--line);
+}
+.chk { display: inline-flex; align-items: center; gap: 5px; font-size: 13px; cursor: pointer; }
+.chk input { accent-color: var(--green); }
+
+#export-result {
+  margin: 10px 14px 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--green-2);
+  font-size: 12px;
+  line-height: 1.9;
+  word-break: break-all;
+}
+#export-result.error { background: #fbeeec; color: var(--danger); }
+#export-result code {
+  background: rgba(0,0,0,.05);
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-family: Consolas, monospace;
+  font-size: 11.5px;
+}

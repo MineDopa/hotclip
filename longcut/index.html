@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LongCut · 长视频规整</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+
+<header>
+  <h1>LongCut</h1>
+  <span class="sub">长视频规整 · 转写 → 标剪 → 出片</span>
+  <span class="tip">判断权在你手里：读文本，划掉不要的，其余交给工具</span>
+</header>
+
+<!-- 打开素材 -->
+<section id="open-bar">
+  <input id="path" spellcheck="false"
+         placeholder="粘贴视频完整路径（例：D:\FFOutput\屏幕录像\过本.mp4）">
+  <button id="btn-open" class="primary">打开</button>
+  <button id="btn-list">浏览</button>
+</section>
+
+<!-- 素材浏览（省得手打路径） -->
+<div id="picker" class="hidden">
+  <div class="picker-head">
+    <button id="picker-up">↑ 上一级</button>
+    <span id="picker-dir"></span>
+    <button id="picker-close">关闭</button>
+  </div>
+  <div id="picker-body">
+    <ul id="picker-dirs"></ul>
+    <ul id="picker-files"></ul>
+  </div>
+</div>
+
+<!-- 状态条 -->
+<div id="status" class="hidden"></div>
+
+<!-- 主工作区 -->
+<main id="workspace" class="hidden">
+  <section id="left">
+    <div class="pane-head">
+      <span class="title">转写稿</span>
+      <span class="hint">点一句＝标剪／取消 · Shift+点＝选一段 · 点时间码＝跳转</span>
+    </div>
+    <div id="lines"></div>
+  </section>
+
+  <section id="right">
+    <video id="video" controls preload="metadata"></video>
+
+    <div class="pane-head">
+      <span class="title">时间轴</span>
+      <label class="chk">
+        <input type="checkbox" id="skip-deleted" checked>
+        预览跳过已剪段
+      </label>
+    </div>
+    <div id="timeline"><div id="tl-cursor"></div></div>
+    <div id="stats"></div>
+
+    <div id="export-bar">
+      <span class="title">导出</span>
+      <label class="chk"><input type="checkbox" id="f-draft" checked> 剪映草稿</label>
+      <label class="chk"><input type="checkbox" id="f-edl" checked> EDL（进 PR）</label>
+      <label class="chk"><input type="checkbox" id="f-srt"> SRT 字幕</label>
+      <label class="chk"><input type="checkbox" id="f-mp4"> MP4 硬剪</label>
+      <button id="btn-export" class="primary">导出</button>
+      <button id="btn-clear">清空标记</button>
+    </div>
+    <div id="export-result" class="hidden"></div>
+  </section>
+</main>
+
+<script src="/app.js"></script>
+</body>
+</html>
